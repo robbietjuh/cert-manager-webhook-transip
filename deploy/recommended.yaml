@@ -1,0 +1,211 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: transip-webhook
+  labels:
+    app: transip-webhook
+---
+# Grant cert-manager permission to validate using our apiserver
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: transip-webhook:domain-solver
+  labels:
+    app: transip-webhook
+rules:
+  - apiGroups:
+      - certmanager.webhook.transip
+    resources:
+      - '*'
+    verbs:
+      - 'create'
+---
+# apiserver gets the auth-delegator role to delegate auth decisions to
+# the core apiserver
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: transip-webhook:auth-delegator
+  labels:
+    app: transip-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: transip-webhook
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: transip-webhook:domain-solver
+  labels:
+    app: transip-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: transip-webhook:domain-solver
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+---
+# Grant the webhook permission to read the ConfigMap containing the Kubernetes
+# apiserver's requestheader-ca-certificate.
+# This ConfigMap is automatically created by the Kubernetes apiserver.
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: transip-webhook:webhook-authentication-reader
+  namespace: kube-system
+  labels:
+    app: transip-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: transip-webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transip-webhook
+  labels:
+    app: transip-webhook
+spec:
+  type: ClusterIP
+  ports:
+    - port: 443
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    app: transip-webhook
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transip-webhook
+  labels:
+    app: transip-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transip-webhook
+  template:
+    metadata:
+      labels:
+        app: transip-webhook
+    spec:
+      serviceAccountName: transip-webhook
+      containers:
+        - name: transip-webhook
+          image: "robbietjuh/cert-manager-webhook-transip:latest"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-private-key-file=/tls/tls.key
+          env:
+            - name: GROUP_NAME
+              value: "certmanager.webhook.transip"
+          ports:
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          volumeMounts:
+            - name: certs
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: transip-webhook-tls
+---
+apiVersion: apiregistration.k8s.io/v1beta1
+kind: APIService
+metadata:
+  name: v1alpha1.certmanager.webhook.transip
+  labels:
+    app: transip-webhook
+  annotations:
+    certmanager.k8s.io/inject-ca-from: "transip-webhook-tls"
+spec:
+  group: certmanager.webhook.transip
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: transip-webhoo
+  version: v1alpha1
+---
+# Generate a CA Certificate used to sign certificates for the webhook
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: transip-webhook-ca
+  labels:
+    app: transip-webhook
+spec:
+  secretName: transip-webhook-ca
+  duration: 43800h # 5y
+  issuerRef:
+    name: transip-webhook-selfsign
+  commonName: "ca.transip-webhook.cert-manager"
+  isCA: true
+---
+# Finally, generate a serving certificate for the webhook to use
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: transip-webhook-tls
+  labels:
+    app: transip-webhook
+spec:
+  secretName: transip-webhook-tls
+  duration: 8760h # 1y
+  issuerRef:
+    name: transip-webhook-ca
+  dnsNames:
+  - transip-webhook
+  - transip-webhook.cert-manager
+  - transip-webhook.cert-manager.svc
+---
+# Create a selfsigned Issuer, in order to create a root CA certificate for
+# signing webhook serving certificates
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Issuer
+metadata:
+  name: transip-webhook-selfsign
+  labels:
+    app: transip-webhook
+spec:
+  selfSigned: {}
+---
+# Source: transip-webhook/templates/pki.yaml
+# Create an Issuer that uses the above generated CA certificate to issue certs
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Issuer
+metadata:
+  name: transip-webhook-ca
+  labels:
+    app: transip-webhook
+spec:
+  ca:
+    secretName: transip-webhook-ca
