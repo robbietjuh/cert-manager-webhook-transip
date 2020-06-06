@@ -43,12 +43,12 @@ spec:
       name: le-staging-issuer-key
     solvers:
     - dns01:
-        cnameStrategy: Follow
         webhook:
-          groupName: certmanager.webhook.transip
+          groupName: cert-manager.webhook.transip
           solverName: transip
           config:
             accountName: your-transip-username
+            ttl: 300
             privateKeySecretRef:
               name: transip-credentials
               key: privateKey
