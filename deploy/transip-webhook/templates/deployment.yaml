@@ -19,15 +19,15 @@ spec:
         app: {{ include "transip-webhook.name" . }}
         release: {{ .Release.Name }}
     spec:
+      {{- if .Values.image.privateRegistrySecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.image.privateRegistrySecretName }}
+      {{- end }}
       serviceAccountName: {{ include "transip-webhook.fullname" . }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if .Values.image.privateRegistrySecretName }}
-          imagePullSecrets:
-            - name: {{ .Values.image.privateRegistrySecretName }}
-          {{- end }}
           args:
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key

@@ -11,7 +11,7 @@ metadata:
 # Grant the webhook permission to read the ConfigMap containing the Kubernetes
 # apiserver's requestheader-ca-certificate.
 # This ConfigMap is automatically created by the Kubernetes apiserver.
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "transip-webhook.fullname" . }}:webhook-authentication-reader
@@ -33,7 +33,7 @@ subjects:
 ---
 # apiserver gets the auth-delegator role to delegate auth decisions to
 # the core apiserver
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "transip-webhook.fullname" . }}:auth-delegator
@@ -53,7 +53,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 ---
 # Grant cert-manager permission to validate using our apiserver
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "transip-webhook.fullname" . }}:domain-solver
@@ -70,7 +70,7 @@ rules:
     verbs:
       - 'create'
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "transip-webhook.fullname" . }}:domain-solver
@@ -87,4 +87,43 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: {{ .Values.certManager.serviceAccountName }}
+    namespace: {{ .Values.certManager.namespace }}
+---
+# Grant cert-manager permission to read secrets from cert-manager ns (i.e. to read the api key for transip)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "transip-webhook.fullname" . }}:transip-auth
+  namespace: {{ .Values.certManager.namespace }}
+  labels:
+    app: {{ include "transip-webhook.name" . }}
+    chart: {{ include "transip-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+rules:
+  - apiGroups:
+      - ''
+    resources:
+      - 'secrets'
+    verbs:
+      - 'get'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "transip-webhook.fullname" . }}:transip-auth
+  namespace: {{ .Values.certManager.namespace }}
+  labels:
+    app: {{ include "transip-webhook.name" . }}
+    chart: {{ include "transip-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "transip-webhook.fullname" . }}:transip-auth
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "transip-webhook.fullname" . }}
     namespace: {{ .Values.certManager.namespace }}
