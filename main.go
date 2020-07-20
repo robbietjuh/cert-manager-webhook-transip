@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/jetstack/cert-manager/pkg/issuer/acme/dns/util"
@@ -15,8 +17,9 @@ import (
 
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/cmd"
-	"github.com/transip/gotransip/v5"
-	"github.com/transip/gotransip/v5/domain"
+	"github.com/transip/gotransip/v6"
+	"github.com/transip/gotransip/v6/domain"
+	"github.com/transip/gotransip/v6/repository"
 )
 
 var GroupName = os.Getenv("GROUP_NAME")
@@ -41,7 +44,7 @@ type transipDNSProviderConfig struct {
 	AccountName         string               `json:"accountName"`
 	PrivateKey          []byte               `json:"privateKey"`
 	PrivateKeySecretRef v1.SecretKeySelector `json:"privateKeySecretRef"`
-	TTL                 int64                `json:"ttl"`
+	TTL                 int                  `json:"ttl"`
 }
 
 // Name is used as the name for this DNS solver when referencing it on the ACME
@@ -50,11 +53,11 @@ func (c *transipDNSProviderSolver) Name() string {
 	return "transip"
 }
 
-func (c *transipDNSProviderSolver) NewSOAPClient(ch *v1alpha1.ChallengeRequest, cfg *transipDNSProviderConfig) (*gotransip.SOAPClient, error) {
+func (c *transipDNSProviderSolver) NewTransipClient(ch *v1alpha1.ChallengeRequest, cfg *transipDNSProviderConfig) (*repository.Client, error) {
 	privateKey := cfg.PrivateKey
 
 	if len(privateKey) == 0 {
-		secret, err := c.client.CoreV1().Secrets(ch.ResourceNamespace).Get(cfg.PrivateKeySecretRef.Name, metav1.GetOptions{})
+		secret, err := c.client.CoreV1().Secrets(ch.ResourceNamespace).Get(context.TODO(), cfg.PrivateKeySecretRef.Name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -66,9 +69,11 @@ func (c *transipDNSProviderSolver) NewSOAPClient(ch *v1alpha1.ChallengeRequest, 
 		}
 	}
 
-	client, err := gotransip.NewSOAPClient(gotransip.ClientConfig{
-		AccountName:    cfg.AccountName,
-		PrivateKeyBody: privateKey,
+	fmt.Printf("creating SOAP client ...\n")
+
+	client, err := gotransip.NewClient(gotransip.ClientConfiguration{
+		AccountName:      cfg.AccountName,
+		PrivateKeyReader: bytes.NewReader(privateKey),
 	})
 	if err != nil {
 		return nil, err
@@ -80,8 +85,8 @@ func (c *transipDNSProviderSolver) NewSOAPClient(ch *v1alpha1.ChallengeRequest, 
 func (c *transipDNSProviderSolver) NewDNSEntryFromChallenge(ch *v1alpha1.ChallengeRequest, cfg *transipDNSProviderConfig, domainName string) domain.DNSEntry {
 	return domain.DNSEntry{
 		Name:    extractRecordName(ch.ResolvedFQDN, domainName),
-		TTL:     cfg.TTL,
-		Type:    domain.DNSEntryTypeTXT,
+		Expire:  cfg.TTL,
+		Type:    "TXT",
 		Content: ch.Key,
 	}
 }
@@ -93,18 +98,22 @@ func (c *transipDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error 
 
 	cfg, err := loadConfig(ch.Config)
 	if err != nil {
+		fmt.Printf("Error while loading config: %s\n", err)
 		return err
 	}
 
-	client, err := c.NewSOAPClient(ch, cfg)
+	client, err := c.NewTransipClient(ch, cfg)
 	if err != nil {
+		fmt.Printf("Error while creating SOAP client: %s\n", err)
 		return err
 	}
 
-	fmt.Printf("presenting record for %s (%s)", ch.ResolvedFQDN, domainName)
+	fmt.Printf("presenting record for %s (%s)\n", ch.ResolvedFQDN, domainName)
 
-	domainInfo, err := domain.GetInfo(client, domainName)
+	domainRepo := domain.Repository{Client: *client}
+	dnsEntries, err := domainRepo.GetDNSEntries(domainName)
 	if err != nil {
+		fmt.Printf("Error while getting domain info for %s: %s\n", domainName, err)
 		return err
 	}
 
@@ -113,17 +122,19 @@ func (c *transipDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error 
 	// This method should tolerate being called multiple times
 	// with the same value. If a TXT record for this request
 	// already exists, we'll simply exit.
-	for _, s := range domainInfo.DNSEntries {
+	for _, s := range dnsEntries {
 		if s == acmeDnsEntry {
+			fmt.Printf("ACME DNS entry already exists, skip\n")
 			return nil
 		}
 	}
 
 	// Record does not exist - append it to the existing DNS entries
-	domainInfo.DNSEntries = append(domainInfo.DNSEntries, acmeDnsEntry)
+	dnsEntries = append(dnsEntries, acmeDnsEntry)
 
-	err = domain.SetDNSEntries(client, domainName, domainInfo.DNSEntries)
+	err = domainRepo.AddDNSEntry(domainName, acmeDnsEntry)
 	if err != nil {
+		fmt.Printf("Error while setting DNS entries for domain %s: %s\n", domainName, err)
 		return err
 	}
 
@@ -141,14 +152,15 @@ func (c *transipDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error 
 		return err
 	}
 
-	client, err := c.NewSOAPClient(ch, cfg)
+	client, err := c.NewTransipClient(ch, cfg)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("cleaning up record for %s (%s)", ch.ResolvedFQDN, domainName)
 
-	domainInfo, err := domain.GetInfo(client, domainName)
+	domainRepo := domain.Repository{Client: *client}
+	dnsEntries, err := domainRepo.GetDNSEntries(domainName)
 	if err != nil {
 		return err
 	}
@@ -158,14 +170,12 @@ func (c *transipDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error 
 	// If multiple TXT records exist with the same record name (e.g.
 	// _acme-challenge.example.com) then **only** the record with the same `key`
 	// value provided on the ChallengeRequest should be cleaned up.
-	for i, s := range domainInfo.DNSEntries {
+
+	for _, s := range dnsEntries {
 		if s == acmeDnsEntry {
 			fmt.Printf("deleting dns record %v", s)
 
-			err = domain.SetDNSEntries(client, domainName, append(
-				domainInfo.DNSEntries[:i],
-				domainInfo.DNSEntries[i+1:]...,
-			))
+			err = domainRepo.RemoveDNSEntry(domainName, acmeDnsEntry)
 			if err != nil {
 				return err
 			}
