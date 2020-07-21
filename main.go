@@ -129,9 +129,6 @@ func (c *transipDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error 
 		}
 	}
 
-	// Record does not exist - append it to the existing DNS entries
-	dnsEntries = append(dnsEntries, acmeDnsEntry)
-
 	err = domainRepo.AddDNSEntry(domainName, acmeDnsEntry)
 	if err != nil {
 		fmt.Printf("Error while setting DNS entries for domain %s: %s\n", domainName, err)
