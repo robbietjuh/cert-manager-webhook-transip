@@ -44,5 +44,5 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{- define "transip-webhook.servingCertificate" -}}
-{{ printf "%s-webhook-tls" (include "transip-webhook.fullname" .) }}
+{{ printf "%s-tls" (include "transip-webhook.fullname" .) }}
 {{- end -}}
