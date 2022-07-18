@@ -31,7 +31,7 @@ kubectl -n cert-manager create secret generic transip-credentials --from-file=pr
 After saving your private key as a secret to the cluster, you'll have to configure the Issuer object. You can use the following as a template:
 
 ```yaml
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: le-staging

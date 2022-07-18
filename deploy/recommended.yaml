@@ -7,7 +7,7 @@ metadata:
   labels:
     app: transip-webhook
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: transip-webhook
@@ -22,7 +22,7 @@ rules:
     verbs:
       - 'get'
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: transip-webhook
@@ -40,7 +40,7 @@ subjects:
     namespace: cert-manager
 ---
 # Grant cert-manager permission to validate using our apiserver
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: transip-webhook:domain-solver
@@ -57,7 +57,7 @@ rules:
 ---
 # apiserver gets the auth-delegator role to delegate auth decisions to
 # the core apiserver
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: transip-webhook:auth-delegator
@@ -74,7 +74,7 @@ subjects:
     name: transip-webhook
     namespace: cert-manager
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: transip-webhook:domain-solver
@@ -94,7 +94,7 @@ subjects:
 # Grant the webhook permission to read the ConfigMap containing the Kubernetes
 # apiserver's requestheader-ca-certificate.
 # This ConfigMap is automatically created by the Kubernetes apiserver.
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: transip-webhook:webhook-authentication-reader
@@ -179,7 +179,7 @@ spec:
           secret:
             secretName: transip-webhook-tls
 ---
-apiVersion: apiregistration.k8s.io/v1beta1
+apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1alpha1.cert-manager.webhook.transip
@@ -198,7 +198,7 @@ spec:
   version: v1alpha1
 ---
 # Generate a CA Certificate used to sign certificates for the webhook
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: transip-webhook-ca
@@ -214,7 +214,7 @@ spec:
   isCA: true
 ---
 # Finally, generate a serving certificate for the webhook to use
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: transip-webhook-tls
@@ -234,7 +234,7 @@ spec:
 ---
 # Create a selfsigned Issuer, in order to create a root CA certificate for
 # signing webhook serving certificates
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: transip-webhook-selfsign
@@ -246,7 +246,7 @@ spec:
 ---
 # Source: transip-webhook/templates/pki.yaml
 # Create an Issuer that uses the above generated CA certificate to issue certs
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: transip-webhook-ca
