@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jetstack/cert-manager/test/acme/dns"
+	"github.com/cert-manager/cert-manager/test/acme/dns"
 )
 
 var (
@@ -20,8 +20,10 @@ func TestRunsSuite(t *testing.T) {
 		dns.SetResolvedZone(zone),
 		dns.SetAllowAmbientCredentials(false),
 		dns.SetManifestPath("testdata/transip"),
-		dns.SetBinariesPath("bin"),
 	)
 
-	fixture.RunConformance(t)
+	//need to uncomment and  RunConformance delete runBasic and runExtended once https://github.com/cert-manager/cert-manager/pull/4835 is merged
+	//fixture.RunConformance(t)
+	fixture.RunBasic(t)
+	fixture.RunExtended(t)
 }
