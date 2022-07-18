@@ -1,4 +1,4 @@
-IMAGE_NAME := "cert-manager-webhook-transip"
+IMAGE_NAME := "robbietjuh/cert-manager-webhook-transip"
 IMAGE_TAG := "latest"
 
 OUT := $(shell pwd)/_out
@@ -13,8 +13,7 @@ build:
 
 .PHONY: rendered-manifest.yaml
 rendered-manifest.yaml:
-	helm template \
-	    --name transip-webhook \
+	helm template transip-webhook \
         --set image.repository=$(IMAGE_NAME) \
         --set image.tag=$(IMAGE_TAG) \
         deploy/transip-webhook > "$(OUT)/rendered-manifest.yaml"
